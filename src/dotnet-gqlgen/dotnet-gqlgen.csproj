@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.2</TargetFramework>
+    <TargetFramework>net5.0</TargetFramework>
     <RootNamespace>dotnet_gqlgen</RootNamespace>
     <PreserveCompilationContext>true</PreserveCompilationContext>
     <PackageVersion>0.2.0</PackageVersion>
