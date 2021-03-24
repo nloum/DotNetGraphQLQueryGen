@@ -129,6 +129,91 @@ namespace dotnet_gqlgen
                 });
                 File.WriteAllText($"{OutputDir}/{ClientClassName}.cs", result);
 
+                foreach(var mutation in typeInfo.Mutation.Fields)
+                {
+                    // result = await engine.CompileRenderAsync("blazor.cshtml", new
+                    // {
+                    //     Namespace = Namespace,
+                    //     Mutation = mutation,
+                    // });
+
+                    var blazorComponent = @$"
+@using {Namespace}
+@using System.Linq.Expressions
+@typeparam TMutationResponse
+@inject GraphQLClient GraphQLClient
+
+@if(_state == State.BeforeSubmit) {{
+    @BeforeSubmit(_contextBeforeSubmit);
+}} else if (_state == State.DuringSubmit) {{
+    @DuringSubmit(_contextDuringSubmit);
+}} else {{
+    @AfterSubmit(_contextAfterSubmit);
+}}
+
+@code {{
+    [Parameter]
+    public RenderFragment<Before{mutation.DotNetName}> BeforeSubmit {{ get; set; }}
+
+    [Parameter]
+    public RenderFragment<During{mutation.DotNetName}> DuringSubmit {{ get; set; }}
+
+    [Parameter]
+    public RenderFragment<After{mutation.DotNetName}> AfterSubmit {{ get; set; }}
+
+    [Parameter]
+    public Expression<Func<{mutation.DotNetType}, TMutationResponse>> Selection {{ get; set; }}
+
+    private State _state = State.BeforeSubmit;
+
+    private Before{mutation.DotNetName} _contextBeforeSubmit;
+    private During{mutation.DotNetName} _contextDuringSubmit;
+    private After{mutation.DotNetName} _contextAfterSubmit;
+
+    protected override async Task OnInitializedAsync() {{
+        _contextBeforeSubmit = new Before{mutation.DotNetName}() {{
+            { mutation.Args.Select(arg => $"{arg.DotNetName} = new {arg.DotNetType}(),").Join("\n            ") }
+            MutateAsync = MutateAsync,
+        }};
+        await base.OnInitializedAsync();
+    }}
+
+    private async Task MutateAsync() {{
+        _contextDuringSubmit = new During{mutation.DotNetName}() {{
+            { mutation.Args.Select(arg => $"{arg.DotNetName} = _contextBeforeSubmit.{arg.DotNetName},").Join("\n            ") }
+        }};
+        var response = await GraphQLClient.MutateAsync(m => m.{mutation.DotNetName}({ mutation.Args.Select(arg => $"_contextBeforeSubmit.{arg.DotNetName}, ").Join() }Selection));
+        _contextAfterSubmit = new After{mutation.DotNetName}() {{
+            { mutation.Args.Select(arg => $"{arg.DotNetName} = _contextDuringSubmit.{arg.DotNetName},").Join("\n            ") }
+            Response = response.Data,
+        }};
+    }}
+
+    private enum State {{
+        BeforeSubmit,
+        DuringSubmit,
+        AfterSubmit
+    }}
+
+    public class Before{mutation.DotNetName} {{
+        { mutation.Args.Select(arg => $"public {arg.DotNetType} {arg.DotNetName} {{ get; set; }}").Join("\n            ") }
+        public Func<Task> MutateAsync {{ get; init; }}
+    }}
+
+    public class During{mutation.DotNetName} {{
+        { mutation.Args.Select(arg => $"public {arg.DotNetType} {arg.DotNetName} {{ get; init; }}").Join("\n            ") }
+    }}
+
+    public class After{mutation.DotNetName} {{
+        { mutation.Args.Select(arg => $"public {arg.DotNetType} {arg.DotNetName} {{ get; init; }}").Join("\n            ") }
+        public TMutationResponse Response {{ get; init; }}
+    }}
+}}
+";
+                    
+                    File.WriteAllText($"{OutputDir}/{mutation.DotNetName}Mutation.razor", blazorComponent);
+                }
+                
                 Console.WriteLine($"Done.");
             }
             catch (Exception e)
