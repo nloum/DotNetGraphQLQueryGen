@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using Humanizer;
 using McMaster.Extensions.CommandLineUtils;
 using Newtonsoft.Json;
 using RazorLight;
@@ -143,56 +144,126 @@ namespace dotnet_gqlgen
 @typeparam TMutationResponse
 @inject GraphQLClient GraphQLClient
 
-@if(_state == State.BeforeSubmit) {{
-    @BeforeSubmit(_contextBeforeSubmit);
-}} else if (_state == State.DuringSubmit) {{
-    @DuringSubmit(_contextDuringSubmit);
+@if(_stage == Stage.BeforeMutate) {{
+    if (BeforeMutate != null && StateBeforeMutate != null) {{
+        @BeforeMutate(StateBeforeMutate);
+    }}
+}} else if (_stage == Stage.DuringMutate) {{
+    if (DuringMutate != null && StateDuringMutate != null) {{
+        @DuringMutate(StateDuringMutate);
+    }}
 }} else {{
-    @AfterSubmit(_contextAfterSubmit);
+    if (AfterMutate != null && StateAfterMutate != null) {{
+        @AfterMutate(StateAfterMutate);
+    }}
 }}
 
 @code {{
     [Parameter]
-    public RenderFragment<Before{mutation.DotNetName}> BeforeSubmit {{ get; set; }}
+    public RenderFragment<Before{mutation.DotNetName}> BeforeMutate {{ get; set; }}
 
     [Parameter]
-    public RenderFragment<During{mutation.DotNetName}> DuringSubmit {{ get; set; }}
+    public RenderFragment<During{mutation.DotNetName}> DuringMutate {{ get; set; }}
 
     [Parameter]
-    public RenderFragment<After{mutation.DotNetName}> AfterSubmit {{ get; set; }}
+    public RenderFragment<After{mutation.DotNetName}> AfterMutate {{ get; set; }}
 
     [Parameter]
-    public Expression<Func<{mutation.DotNetType}, TMutationResponse>> Selection {{ get; set; }}
+    public Expression<Func<{mutation.DotNetType}, TMutationResponse>> DesiredResults {{ get; set; }}
 
-    private State _state = State.BeforeSubmit;
+    private Stage _stage = Stage.BeforeMutate;
 
-    private Before{mutation.DotNetName} _contextBeforeSubmit;
-    private During{mutation.DotNetName} _contextDuringSubmit;
-    private After{mutation.DotNetName} _contextAfterSubmit;
+    private Before{mutation.DotNetName} _stateBeforeMutate;
+        
+    public override async Task SetParametersAsync(ParameterView parameters)
+    {{
+        _stateBeforeMutate = new Before{mutation.DotNetName}() {{
+            MutateAsync = MutateAsync
+        }};
+        await base.SetParametersAsync(parameters);
+        { mutation.Args.Select(arg => $"_stateBeforeMutate.{arg.DotNetName} = new {arg.DotNetType}();").Join("\n        ") }
+    }}
+
+    [Parameter]
+    public Before{mutation.DotNetName} StateBeforeMutate {{
+        get => _stateBeforeMutate;
+        set {{
+            _stateBeforeMutate = value;
+            StateBeforeMutateChanged.InvokeAsync(value);
+        }}
+    }}
+
+    [Parameter]
+    public EventCallback<Before{mutation.DotNetName}> StateBeforeMutateChanged {{ get; set; }}
+
+    private During{mutation.DotNetName} _stateDuringMutate;
+
+    [Parameter]
+    public During{mutation.DotNetName} StateDuringMutate {{
+        get => _stateDuringMutate;
+        set {{
+            _stateDuringMutate = value;
+            StateDuringMutateChanged.InvokeAsync(value);
+        }}
+    }}
+
+    [Parameter]
+    public EventCallback<During{mutation.DotNetName}> StateDuringMutateChanged {{ get; set; }}
+
+    private After{mutation.DotNetName} _stateAfterMutate;
+
+    [Parameter]
+    public After{mutation.DotNetName} StateAfterMutate {{
+        get => _stateAfterMutate;
+        set {{
+            _stateAfterMutate = value;
+            StateAfterMutateChanged.InvokeAsync(value);
+        }}
+    }}
+
+    [Parameter]
+    public EventCallback<After{mutation.DotNetName}> StateAfterMutateChanged {{ get; set; }}
+
+{
+    mutation.Args.Select(arg => @$"
+    private {arg.DotNetType} _{arg.DotNetName.Camelize()};
+
+    [Parameter]
+    public {arg.DotNetType} {arg.DotNetName} {{
+        get => _{arg.DotNetName.Camelize()};
+        set {{
+            _{arg.DotNetName.Camelize()} = value;
+            StateBeforeMutate.{arg.DotNetName} = value;
+            {arg.DotNetName}Changed.InvokeAsync(value);
+        }}
+    }}
+
+    [Parameter]
+    public EventCallback<{arg.DotNetType}> {arg.DotNetName}Changed {{ get; set; }}
+").Join("\n")
+}
 
     protected override async Task OnInitializedAsync() {{
-        _contextBeforeSubmit = new Before{mutation.DotNetName}() {{
-            { mutation.Args.Select(arg => $"{arg.DotNetName} = new {arg.DotNetType}(),").Join("\n            ") }
-            MutateAsync = MutateAsync,
-        }};
         await base.OnInitializedAsync();
     }}
 
     private async Task MutateAsync() {{
-        _contextDuringSubmit = new During{mutation.DotNetName}() {{
-            { mutation.Args.Select(arg => $"{arg.DotNetName} = _contextBeforeSubmit.{arg.DotNetName},").Join("\n            ") }
+        StateDuringMutate = new During{mutation.DotNetName}() {{
+            { mutation.Args.Select(arg => $"{arg.DotNetName} = StateBeforeMutate.{arg.DotNetName},").Join("\n            ") }
         }};
-        var response = await GraphQLClient.MutateAsync(m => m.{mutation.DotNetName}({ mutation.Args.Select(arg => $"_contextBeforeSubmit.{arg.DotNetName}, ").Join() }Selection));
-        _contextAfterSubmit = new After{mutation.DotNetName}() {{
-            { mutation.Args.Select(arg => $"{arg.DotNetName} = _contextDuringSubmit.{arg.DotNetName},").Join("\n            ") }
+        _stage = Stage.DuringMutate;
+        var response = await GraphQLClient.MutateAsync(m => m.{mutation.DotNetName}({ mutation.Args.Select(arg => $"StateDuringMutate.{arg.DotNetName}, ").Join() }DesiredResults));
+        StateAfterMutate = new After{mutation.DotNetName}() {{
+            { mutation.Args.Select(arg => $"{arg.DotNetName} = StateDuringMutate.{arg.DotNetName},").Join("\n            ") }
             Response = response.Data,
         }};
+        _stage = Stage.AfterMutate;
     }}
 
-    private enum State {{
-        BeforeSubmit,
-        DuringSubmit,
-        AfterSubmit
+    private enum Stage {{
+        BeforeMutate,
+        DuringMutate,
+        AfterMutate
     }}
 
     public class Before{mutation.DotNetName} {{
