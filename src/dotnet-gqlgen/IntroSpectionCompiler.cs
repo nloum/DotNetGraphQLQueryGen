@@ -164,7 +164,21 @@ namespace dotnet_gqlgen
 
         private bool IsNonNullable(JToken typeToken) => typeToken.ReadKind() == "NON_NULL";
 
-        private bool IsArray(JToken typeToken) => typeToken.ReadKind() == "LIST";
+        private bool IsArray(JToken typeToken)
+        {
+            if (typeToken.ReadKind() == "LIST")
+            {
+                return true;
+            }
+
+            var result = typeToken["ofType"];
+            if (result != null && !(result is JValue value && value.Value == null))
+            {
+                return IsArray(result);
+            }
+
+            return false;
+        }
     }
 
     internal static class IntroSpectionExtensions
