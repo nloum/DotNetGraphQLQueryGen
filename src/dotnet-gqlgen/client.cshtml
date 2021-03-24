@@ -33,6 +33,8 @@ namespace @Model.Namespace
     {
         private Uri apiUrl;
         private readonly HttpClient client;
+        private JsonSerializerOptions jsonSerializerOptions = new JsonSerializerOptions() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        private JsonSerializerOptions jsonDeserializerOptions = new JsonSerializerOptions() { PropertyNameCaseInsensitive = true };
 
         protected @(Model.ClientClassName)()
         {
@@ -64,13 +66,13 @@ namespace @Model.Namespace
                 RequestUri = this.apiUrl,
                 Method = HttpMethod.Post,
             };
-            req.Content = new StringContent(JsonSerializer.Serialize(gql), Encoding.UTF8, "application/json");
+            req.Content = new StringContent(JsonSerializer.Serialize(gql, this.jsonSerializerOptions), Encoding.UTF8, "application/json");
             // you will need to implement any auth
             // req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             var res = await client.SendAsync(req);
             res.EnsureSuccessStatusCode();
             var strResult = await res.Content.ReadAsStringAsync();
-            var data = JsonSerializer.Deserialize<GqlResult<TQuery>>(strResult);
+            var data = JsonSerializer.Deserialize<GqlResult<TQuery>>(strResult, this.jsonDeserializerOptions);
             return data;
         }
 
